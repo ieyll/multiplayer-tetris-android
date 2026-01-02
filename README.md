@@ -27,6 +27,11 @@ Firebase services were used for **testing and prototyping purposes** and are cur
 - Game events such as score updates and piece positions are shared between players
 - Designed to support scalability for future online matchmaking
 
+assets/
+ ├─ singleplayer.png
+ ├─ multiplayer.png
+ └─ gameplay.png
+
 ## 📸 Screenshots
 
 ### Single Player Mode
