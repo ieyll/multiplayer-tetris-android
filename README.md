@@ -22,6 +22,19 @@ Firebase services were used for **testing and prototyping purposes** and are cur
 - Clean architecture (`model`, `logic`, `ui`)
 - Scalable game logic
 
+## 🧠 Multiplayer Logic
+- Player states are synchronized in real time using Firebase Realtime Database
+- Game events such as score updates and piece positions are shared between players
+- Designed to support scalability for future online matchmaking
+
+## 📸 Screenshots
+
+### Single Player Mode
+![Single Player](assets/singleplayer.png)
+
+### Multiplayer Mode
+![Multiplayer](assets/multiplayer.png)
+
 ## ▶️ How to Run
 1. Clone the repository
 2. Open with Android Studio
