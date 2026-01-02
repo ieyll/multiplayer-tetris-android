@@ -24,15 +24,14 @@ import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.launch
 import com.example.tetrisprojem.data.GameResult
 import com.example.tetrisprojem.data.GameLevels
-import androidx.compose.foundation.Canvas // Rakip tahtası için
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.times
-import kotlinx.coroutines.flow.first // *** YENİ IMPORT ***
-
+import kotlinx.coroutines.flow.first
 
 @Composable
 fun GameRoomScreen(
@@ -40,7 +39,7 @@ fun GameRoomScreen(
     currentUserId: String,
     isPlayer1: Boolean,
     gameRepository: GameRepository,
-    onGameEnd: () -> Unit // Bu callback, sadece oyun bittiğinde lobiye dönmek için kullanılacak
+    onGameEnd: () -> Unit
 ) {
     val gameRoom by gameRepository.observeGameRoom(roomId).collectAsState(initial = null)
 
@@ -49,9 +48,8 @@ fun GameRoomScreen(
 
     val coroutineScope = rememberCoroutineScope()
 
-    // Odanın seviyesini gameRoom objesinden al
     val currentMultiplayerLevel = remember(gameRoom) {
-        gameRoom?.level ?: GameLevels.MULTIPLAYER_LEVEL // gameRoom?.level null ise varsayılan multiplayer seviyesini kullan
+        gameRoom?.level ?: GameLevels.MULTIPLAYER_LEVEL
     }
     val sharedBlockSequence = gameRoom?.blockSequence ?: emptyList()
 
@@ -59,6 +57,7 @@ fun GameRoomScreen(
 
     LaunchedEffect(gameRoom) {
         gameRoom?.let { room ->
+
             if (room.status == "finished") {
                 isGameReallyOver = true
                 return@LaunchedEffect
@@ -72,7 +71,9 @@ fun GameRoomScreen(
                 opponentPlayerState = room.player1State
             }
 
+
             if (room.player1Id != null && room.player2Id != null && room.status == "waiting") {
+
                 if (isPlayer1) {
                     coroutineScope.launch {
                         gameRepository.updateGameRoomStatus(roomId, "in_game")
@@ -88,9 +89,10 @@ fun GameRoomScreen(
         }
     }
 
+
     if (gameRoom?.status == "in_game" && localPlayerState != null && sharedBlockSequence.isNotEmpty()) {
         TetrisGameScreen(
-            level = currentMultiplayerLevel, // Odanın seviyesini TetrisGameScreen'e iletiyoruz
+            level = currentMultiplayerLevel,
             initialPlayerState = localPlayerState,
             blockSequence = sharedBlockSequence,
             onPlayerStateChange = { updatedPlayerState ->
@@ -106,46 +108,87 @@ fun GameRoomScreen(
             },
             onGameEnd = { gameResult ->
                 coroutineScope.launch {
+                    if (gameResult is GameResult.MainMenu) {
+                        // Eğer oyuncu Ana Menüye dönmek istediyse
+                        if (isPlayer1) {
+                            // Player 1 ise odayı sil
+                            gameRepository.deleteGameRoom(roomId)
+                                .onSuccess {
+                                    println("Player 1 odadan ayrıldığı için oda silindi: $roomId")
+                                    onGameEnd() // Lobiye dön
+                                }
+                                .onFailure { e ->
+                                    println("Oda silinirken hata: ${e.message}")
+                                    onGameEnd() // Hata olsa bile lobiye dönmeye çalış
+                                }
+                        } else {
+                            // Player 2 ise odadan ayrıl
+                            gameRepository.leaveGameRoom(roomId, currentUserId)
+                                .onSuccess {
+                                    println("Player 2 odadan ayrıldı: $roomId")
+                                    onGameEnd() // Lobiye dön
+                                }
+                                .onFailure { e ->
+                                    println("Odadan ayrılırken hata: ${e.message}")
+                                    onGameEnd() // Hata olsa bile lobiye dönmeye çalış
+                                }
+                        }
+                        return@launch // Bu durumda diğer işlemleri yapma
+                    }
+
                     val finalScore = when (gameResult) {
                         is GameResult.Completed -> gameResult.score
                         is GameResult.Failed -> gameResult.score
-                        else -> localPlayerState?.score ?: 0
+                        else -> localPlayerState?.score ?: 0 // Bu senaryoya düşmemeli, ama fallback
                     }
 
+                    // TetrisGameScreen'den gelen GameResult.Failed durumu, oyuncunun kendi oyununun bittiği anlamına gelir.
+                    val isLocalPlayerActuallyGameOver = (gameResult is GameResult.Failed)
+
                     val newLocalState = localPlayerState?.copy(
-                        isGameOver = (gameResult is GameResult.Failed),
+                        isGameOver = isLocalPlayerActuallyGameOver,
                         score = finalScore,
                         currentBlockSequenceIndex = localPlayerState?.currentBlockSequenceIndex ?: 0
-                    ) ?: PlayerState(currentUserId, score = finalScore, isGameOver = (gameResult is GameResult.Failed), level = currentMultiplayerLevel.id)
+                    ) ?: PlayerState(currentUserId, score = finalScore, isGameOver = isLocalPlayerActuallyGameOver, level = currentMultiplayerLevel.id)
 
 
                     gameRepository.updatePlayerState(roomId, isPlayer1, newLocalState)
                         .onSuccess {
                             println("Kendi oyun durumum Firebase'e başarıyla güncellendi. Oyun durumu: ${newLocalState.isGameOver}")
 
+                            // Firebase'den en güncel oda durumunu çekerek rakibin durumunu da kontrol et
                             val latestGameRoom = gameRepository.observeGameRoom(roomId).first()
 
                             latestGameRoom?.let { room ->
                                 val otherPlayerState = if (isPlayer1) room.player2State else room.player1State
                                 val otherPlayerId = if (isPlayer1) room.player2Id else room.player1Id
 
+                                // Multiplayer modda oyunun bitiş koşulları:
+                                // 1. Kendi isGameOver true ise
+                                // 2. Rakip isGameOver true ise
+                                // Eğer multiplayer seviyedeysek ve süre görevi varsa, süre bitimi de isGameOver'ı tetikler.
                                 if (newLocalState.isGameOver || (otherPlayerState?.isGameOver == true)) {
                                     val winnerId: String?
 
                                     if (newLocalState.isGameOver && (otherPlayerState?.isGameOver == true)) {
+                                        // İki oyuncu da game over ise, skoru yüksek olan kazanır
                                         winnerId = if (newLocalState.score >= (otherPlayerState.score)) {
                                             currentUserId
                                         } else {
                                             otherPlayerId
                                         }
                                     } else if (newLocalState.isGameOver) {
+                                        // Sadece kendi oyunumuz bittiyse (biz kaybettiysek), rakip kazanır (eğer rakip hala oynuyorsa)
                                         winnerId = otherPlayerId
                                     } else if (otherPlayerState?.isGameOver == true) {
+                                        // Sadece rakibin oyunu bittiyse (rakip kaybettiyse), biz kazanırız
                                         winnerId = currentUserId
                                     } else {
-                                        winnerId = null
+                                        winnerId = null // Bu duruma düşmemeliyiz, ama hata yakalama
                                     }
 
+                                    // Sadece player1 veya kendi oyunu bittiyse ve oda henüz bitmediyse güncelle
+                                    // Bu kontrol, race condition'ları engeller ve sadece bir tarafın durumu 'finished' yapmasını sağlar.
                                     if (isPlayer1 || (newLocalState.isGameOver && room.status != "finished")) {
                                         gameRepository.updateGameRoomStatus(roomId, "finished", winnerId)
                                         println("Oyun sonu durumu Firebase'e gönderildi: Kazanan: $winnerId")
@@ -168,22 +211,30 @@ fun GameRoomScreen(
             val winnerId = gameRoom?.winnerId
             val localPlayerScore = localPlayerState?.score ?: 0
             val opponentPlayerFinalScore = opponentPlayerState?.score ?: 0
+            val isMultiplayerLevel = gameRoom?.level?.id == GameLevels.MULTIPLAYER_LEVEL.id
 
             Text("OYUN BİTTİ!", style = MaterialTheme.typography.headlineLarge, color = Color.Red)
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (winnerId != null) {
-                Text(
-                    text = if (winnerId == currentUserId) "Tebrikler, SEN KAZANDIN!" else "Rakip Kazandı!",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = if (winnerId == currentUserId) Color.Green else Color.Yellow
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Senin Skorun: $localPlayerScore", style = MaterialTheme.typography.bodyLarge)
-                Text("Rakip Skor: ${opponentPlayerFinalScore}", style = MaterialTheme.typography.bodyLarge)
+            if (isMultiplayerLevel) {
+                if (winnerId != null) {
+                    Text(
+                        text = if (winnerId == currentUserId) "Tebrikler, SEN KAZANDIN!" else "Rakip Kazandı!",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = if (winnerId == currentUserId) Color.Green else Color.Yellow
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Senin Skorun: $localPlayerScore", style = MaterialTheme.typography.bodyLarge)
+                    Text("Rakip Skor: ${opponentPlayerFinalScore}", style = MaterialTheme.typography.bodyLarge)
+                } else {
+                    Text("Oyun Sona Erdi (Kazanan Belirlenemedi)", style = MaterialTheme.typography.headlineMedium)
+                }
             } else {
-                Text("Oyun Sona Erdi (Beraberlik veya Bilinmiyor)", style = MaterialTheme.typography.headlineMedium)
+
+                Text("Oyun Sona Erdi", style = MaterialTheme.typography.headlineMedium)
+                Text("Skorun: $localPlayerScore", style = MaterialTheme.typography.bodyLarge)
             }
+
 
             Spacer(modifier = Modifier.height(32.dp))
 
@@ -214,19 +265,26 @@ fun GameRoomScreen(
 
             localPlayerState?.let { localState ->
                 Text("Senin Skorun: ${localState.score}")
+                // Sadece multiplayer seviyesindeyse isGameOver durumunu göster
+                if (gameRoom?.level?.id == GameLevels.MULTIPLAYER_LEVEL.id) {
+                    Text("Senin Durumun: ${if (localState.isGameOver) "Oyun Bitti" else "Oynuyor"}")
+                }
             }
             Spacer(modifier = Modifier.height(16.dp))
 
             opponentPlayerState?.let { opponentState ->
                 Text("Rakip Skor: ${opponentState.score}")
-                Text("Rakip Durumu: ${if (opponentState.isGameOver) "Oyun Bitti" else "Oynuyor"}")
 
+                if (gameRoom?.level?.id == GameLevels.MULTIPLAYER_LEVEL.id) {
+                    Text("Rakip Durumu: ${if (opponentState.isGameOver) "Oyun Bitti" else "Oynuyor"}")
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text("Rakibin Tahtası:", style = MaterialTheme.typography.titleSmall)
                 RakipBoardCanvas(board = convert1DTo2D(opponentState.board.grid, BOARD_ROWS, BOARD_COLS))
             } ?: Text("Rakip bekleniyor...")
 
             Spacer(modifier = Modifier.height(32.dp))
+
 
             gameRoom?.let { room ->
                 if (room.status == "finished") {
@@ -254,7 +312,7 @@ fun GameRoomScreen(
                             }
                             .onFailure { e ->
                                 println("Oda silme hatası: ${e.message}")
-                                onGameEnd()
+                                onGameEnd() // Hata olsa bile lobiye dön
                             }
                     } else {
                         gameRepository.leaveGameRoom(roomId, currentUserId)
@@ -264,7 +322,7 @@ fun GameRoomScreen(
                             }
                             .onFailure { e ->
                                 println("Odadan çıkış hatası: ${e.message}")
-                                onGameEnd()
+                                onGameEnd() // Hata olsa bile lobiye dön
                             }
                     }
                 }

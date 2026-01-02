@@ -36,7 +36,7 @@ data class FallingPiece(
     constructor() : this("", emptyList(), 0, Point())
 }
 
-// Firestore'a kaydedilecek blok state'i (FallingPiece'den basitleştirilmiş)
+// Firestore'a kaydedilecek blok state'i
 data class BlockState(
     val shapeId: String = "",
     val color: Int = 0,
@@ -55,7 +55,7 @@ data class PlayerState(
     val score: Int = 0,
     val isGameOver: Boolean = false,
     val level: String = "beginner", // Hangi seviyede oynadığını belirtir. (String olarak güncellendi)
-    val currentBlockSequenceIndex: Int = 0 // YENİ EKLENDİ: Oyuncunun kendi taş sırası indeksi
+    val currentBlockSequenceIndex: Int = 0 //Oyuncunun kendi taş sırası indeksi
 ) {
     // Firebase için boş constructor
     constructor() : this("")
@@ -72,7 +72,7 @@ enum class MissionType {
 data class Mission(
     val id: String = "",
     val type: MissionType = MissionType.CLEAR_LINES,
-    val targetValue: Int = 0, // Hedef değer (örn: 10 satır, 500 skor, 60 saniye)
+    val targetValue: Int = 0, // Hedef değer
     val description: String = "", // Görevin açıklaması
     var isCompleted: Boolean = false // Görevin tamamlanıp tamamlanmadığı
 ) {
@@ -82,8 +82,8 @@ data class Mission(
 
 // Oyun teması (arka plan, blok renkleri vb.)
 data class Theme(
-    val backgroundColor: Int = 0, // Arka plan rengi (ARGB Int)
-    val blockColors: List<Int> = emptyList() // Blok renkleri listesi (ARGB Int)
+    val backgroundColor: Int = 0,
+    val blockColors: List<Int> = emptyList()
 ) {
     // Firebase için boş constructor
     constructor() : this(0, emptyList())
@@ -113,7 +113,7 @@ data class GameRoom(
     val status: String = "waiting", // waiting, in_game, finished
     val winnerId: String? = null, // Oyun bittiğinde kazananın ID'si
     val level: Level = GameLevels.BEGINNER_LEVEL, // Odanın seviyesi
-    val blockSequence: List<String> = emptyList() // YENİ EKLENDİ: Ortak blok sırası
+    val blockSequence: List<String> = emptyList() // Ortak blok sırası
 ) {
     // Boş constructor'ı da güncelle
     constructor() : this(
@@ -132,7 +132,7 @@ data class GameRoom(
 object GameLevels {
     val BEGINNER_LEVEL = Level(
         id = "beginner",
-        name = "Başlangıç Seviyesi",
+        name = "Başlangıç",
         description = "Temel Tetris deneyimi, daha yavaş düşme hızı.",
         startingSpeed = 800L,
         initialBoardObstacles = 0,
@@ -156,7 +156,7 @@ object GameLevels {
 
     val INTERMEDIATE_LEVEL = Level(
         id = "intermediate",
-        name = "Orta Seviye",
+        name = "Orta",
         description = "Daha hızlı düşme ve bazı başlangıç engelleri.",
         startingSpeed = 600L,
         initialBoardObstacles = 5,

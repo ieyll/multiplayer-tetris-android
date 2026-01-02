@@ -20,8 +20,8 @@ class GameRepository(private val firestore: FirebaseFirestore) {
     suspend fun createGameRoom(player1Id: String, level: Level): Result<String> { // level parametresi Level tipinde
         return try {
             val roomId = roomsCollection.document().id
-            // Yeni: Oyun odası için rastgele blok sırası oluştur
-            val blockSequence = generateRandomBlockSequence(200) // Örneğin 200 blokluk bir sıra
+            // Oyun odası için rastgele blok sırası oluştur
+            val blockSequence = generateRandomBlockSequence(200)
             val newRoom = GameRoom(
                 roomId = roomId,
                 player1Id = player1Id,

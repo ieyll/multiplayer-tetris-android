@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -31,8 +32,17 @@ import androidx.compose.foundation.border
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.text.font.FontWeight
 import com.example.tetrisprojem.data.GameLevels
-import kotlinx.coroutines.Job // Job import'ı
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.drawscope.clipRect
+
+// İkonlar için yeni importlar
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material3.Icon // Icon composable'ı için
+
 
 @Composable
 fun TetrisGameScreen(
@@ -51,10 +61,6 @@ fun TetrisGameScreen(
     var totalClearedLines by remember { mutableStateOf(0) }
     val currentMissions = remember { mutableStateListOf(*level.missions.toTypedArray()) }
 
-    // ... diğer state'ler
-
-
-// ...
     // Multiplayer için ek state'ler
     var playerBlockSequenceIndex by remember { mutableStateOf(initialPlayerState?.currentBlockSequenceIndex ?: 0) }
     var dynamicMissionTimeLeft by remember { mutableStateOf(0) } // SURVIVE_TIME görevi için sayaç
@@ -71,6 +77,7 @@ fun TetrisGameScreen(
             score = 0
             totalClearedLines = 0
             isGameOver = false
+            isGamePaused = false // Sıfırlarken duraklatma durumunu da sıfırla
             currentMissions.clear()
             currentMissions.addAll(level.missions.map { it.copy(isCompleted = false) }) // Görevleri de sıfırla
 
@@ -81,8 +88,6 @@ fun TetrisGameScreen(
                 val newPiece = generateNextFallingPiece(blockSequence, playerBlockSequenceIndex)
                 if (checkCollision(currentBoard, newPiece, 0, 0)) {
                     isGameOver = true // Oyun zaten başlamadan bitti
-                    // Multiplayer ise GameRoomScreen bu durumu Firestore'a yansıtabilir.
-                    // Tek oyunculu ise, Game Over ekranı hemen gösterilir.
                     onGameEnd(GameResult.Failed(score, level.id)) // Oyun bittiğini bildir
                 } else {
                     currentPiece = newPiece
@@ -101,52 +106,52 @@ fun TetrisGameScreen(
 
             dynamicMissionTimeLeft = 0 // Sayaç sıfırla
             dynamicMissionJob?.cancel() // Varsa önceki sayacı durdur
-            dynamicMissionJob = null
+            dynamicMissionJob = null // İşin null olduğundan emin ol
 
             println("Oyun sıfırlandı: Level: ${level.name}, Multiplayer: ${initialPlayerState != null}")
         }
     }
 
-    // İlk başlatmada ve level değiştiğinde oyunu başlat
+    // İlk başlatmada ve level değiştiğinde oyunu başlat/sıfırla
     LaunchedEffect(level) {
         resetGame()
     }
 
     // Multiplayer modda initialPlayerState değiştiğinde yerel durumu güncelle
+    // Bu LaunchedEffect, Firebase'den gelen güncel PlayerState'i dinler
     LaunchedEffect(initialPlayerState) {
         initialPlayerState?.let { playerState ->
+            // Sadece multiplayer seviyesinde isGameOver durumunu Firebase'den al
+            if (level.id == GameLevels.MULTIPLAYER_LEVEL.id) {
+                isGameOver = playerState.isGameOver
+            }
+
             currentBoard = convert1DTo2D(playerState.board.grid, BOARD_ROWS, BOARD_COLS)
             score = playerState.score
-            isGameOver = playerState.isGameOver // Oyuncunun Firebase'deki isGameOver durumunu al
-            playerBlockSequenceIndex = playerState.currentBlockSequenceIndex // Oyuncunun blok sırası indeksini güncelle
+            playerBlockSequenceIndex = playerState.currentBlockSequenceIndex
 
-            // Multiplayer modda parça senkronizasyonu
             val firebasePiece = playerState.currentBlock?.let { block ->
                 FallingPiece(
                     shapeId = block.shapeId,
                     shape = getBlockShapeById(block.shapeId),
                     color = block.color,
-                    position = Point(block.col, block.row) // Düzeltme burada! block.x yerine block.col, block.y yerine block.row
+                    position = Point(block.col, block.row)
                 )
             }
 
-            // Sadece currentPiece null ise veya Firebase'den gelen parça ile eşleşmiyorsa
-            // (yani Firebase'den yeni bir parça gelmiş veya bir senkronizasyon hatası oluşmuşsa)
-            // Firebase'den gelenle güncelleriz.
-            // Aksi takdirde, kullanıcının yerel olarak yaptığı hareketi koruruz.
-            // ÖNEMLİ: currentPiece ile firebasePiece'i doğrudan karşılaştırmak, FallingPiece içinde equals metodu tanımlanmamışsa
-            // referans karşılaştırması yapacaktır. Bu nedenle, içeriksel bir eşitlik kontrolü yapmalıyız.
-            if (currentPiece == null || currentPiece?.shapeId != firebasePiece?.shapeId ||
+            // Parçayı senkronize et, ancak yerel hareketi koru
+            if (currentPiece == null ||
+                currentPiece?.shapeId != firebasePiece?.shapeId ||
                 currentPiece?.position != firebasePiece?.position ||
-                currentPiece?.color != firebasePiece?.color) { // Basit bir içeriksel kontrol
+                currentPiece?.color != firebasePiece?.color
+            ) {
                 currentPiece = firebasePiece
             }
 
-
             // Multiplayer görevleri için: Eğer ilk aşama görevleri tamamlandıysa ikinci aşama görevi ekle
             if (level.id == GameLevels.MULTIPLAYER_LEVEL.id &&
-                currentMissions.none { it.id == "mm3_stage2_time" } && // Henüz eklenmediyse
-                currentMissions.all { it.isCompleted } // Ve ilk aşama görevleri tamamlandıysa
+                currentMissions.none { it.id == "mm3_stage2_time" } &&
+                currentMissions.all { it.isCompleted }
             ) {
                 currentMissions.add(Mission(id = "mm3_stage2_time", type = MissionType.SURVIVE_TIME, targetValue = 40, description = "40 saniye hayatta kal", isCompleted = false))
             }
@@ -154,44 +159,45 @@ fun TetrisGameScreen(
     }
 
 
-    // Oyun döngüsü (blok düşürme)
-    LaunchedEffect(isGameOver) { // isGameOver değiştiğinde bu LaunchedEffect yeniden tetiklenmeli
-        if (!isGameOver) { // Oyun bitmemişse döngüyü çalıştır
-            val gameLoopInterval = currentLevelSpeed // Blok düşme hızı
+    // Oyun döngüsü (blok düşürme) ve Sayaç Yönetimi
+    LaunchedEffect(isGameOver, isGamePaused, currentMissions.size) { // currentMissions.size eklenerek yeni görev eklendiğinde de tetiklenir
+        if (!isGameOver && !isGamePaused) {
+            val gameLoopInterval = currentLevelSpeed
 
-            // Eğer multiplayer seviyedeysek ve zaman görevimiz varsa sayacı başlat
-            // Eğer multiplayer seviyedeysek ve zaman görevimiz varsa sayacı başlat
+            // Eğer multiplayer seviyedeysek ve zaman görevimiz varsa sayacı başlat/yönet
             if (level.id == GameLevels.MULTIPLAYER_LEVEL.id) {
-                val surviveMission = currentMissions.find { it.type == MissionType.SURVIVE_TIME && !it.isCompleted }
-                if (surviveMission != null && dynamicMissionJob == null) {
-                    dynamicMissionTimeLeft = surviveMission.targetValue // Sayacı başlat
-                    dynamicMissionJob = launch {
-                        while (dynamicMissionTimeLeft > 0 && isActive && !isGameOver && !surviveMission.isCompleted && !isGamePaused) { // isGamePaused eklendi
+                val surviveMission = currentMissions.find { it.type == MissionType.SURVIVE_TIME }
+                if (surviveMission != null && !surviveMission.isCompleted && dynamicMissionJob == null) {
+                    dynamicMissionTimeLeft = surviveMission.targetValue
+                    dynamicMissionJob = launch { // LaunchedEffect'in kendi scope'unu kullan
+                        while (dynamicMissionTimeLeft > 0 && isActive && !isGameOver && !surviveMission.isCompleted && !isGamePaused) {
                             delay(1000L)
-                            if (!isGameOver && !isGamePaused) { // Ekstra kontrol, oyun döngüsü sırasında Game Over veya Pause olursa sayacı durdur
+                            if (!isGameOver && !isGamePaused) {
                                 dynamicMissionTimeLeft--
                             }
                             if (dynamicMissionTimeLeft <= 0) {
-                                surviveMission.isCompleted = true // Görev tamamlandı
-                                // Görev tamamlandığında oyun bitmesin, skorla devam etsin
-                                // Multiplayer ise durumu güncelle
-                                onPlayerStateChange?.invoke(
-                                    (initialPlayerState ?: PlayerState(userId = "guest")).copy(
-                                        score = score,
-                                        isGameOver = false, // Görev tamamlandığında Game Over olmuyor
-                                        currentBlockSequenceIndex = playerBlockSequenceIndex,
-                                        // Eğer survive görevi tamamlandıysa, oyuncunun hala oyunda olduğunu varsayarız.
-                                        // Ancak diğer oyuncu game over olduysa, oyun yine de bitebilir.
-                                    )
-                                )
+                                surviveMission.isCompleted = true
+                                isGameOver = true // Süre bittiğinde oyun bitiyor
+                                onGameEnd(GameResult.Failed(score, level.id))
+                                dynamicMissionJob?.cancel()
+                                dynamicMissionJob = null
+                                break
                             }
                         }
+                        if (!isActive || isGameOver || isGamePaused || surviveMission.isCompleted) {
+                            dynamicMissionJob?.cancel()
+                            dynamicMissionJob = null
+                        }
                     }
+                } else if (surviveMission == null || surviveMission.isCompleted) {
+                    dynamicMissionJob?.cancel()
+                    dynamicMissionJob = null
                 }
             }
 
 
-            while (isActive && !isGameOver && !isGamePaused) { // isGameOver olduğunda döngü durur
+            // Ana oyun düşme döngüsü
+            while (isActive && !isGameOver && !isGamePaused) {
                 delay(gameLoopInterval)
 
                 if (currentPiece == null) {
@@ -201,27 +207,23 @@ fun TetrisGameScreen(
                         generateNextFallingPiece()
                     }
 
-                    // *** GELİŞTİRİLMİŞ GAME OVER KONTROLÜ (Başlangıç Hizasına Geldiğinde) ***
-                    // Yeni blok oluşturulduğu anda mevcut bloklarla veya tahtanın üst sınırı ile çarpışıyor mu?
                     if (checkCollision(currentBoard, newPiece, 0, 0)) {
                         isGameOver = true
                         onGameEnd(GameResult.Failed(score, level.id))
-                        break // Oyun bitti, döngüyü sonlandır
+                        break
                     }
 
                     currentPiece = newPiece
 
-                    // Yeni bir parça oluşturulduğunda indeksi artır (sadece multiplayer ise)
                     if (blockSequence != null) {
                         playerBlockSequenceIndex++
                     }
                 } else {
                     val movedPiece = moveBlock(currentPiece!!, 0, 1)
-                    // Normal düşme çarpışma kontrolü
                     if (checkCollision(currentBoard, movedPiece, 0, 0)) {
                         currentBoard = addToBoard(currentBoard, currentPiece!!)
                         val clearedLines = clearLines(currentBoard)
-                        currentBoard = currentBoard.map { it.toMutableList() }.toMutableList() // Force recompose
+                        currentBoard = currentBoard.map { it.toMutableList() }.toMutableList()
 
                         if (clearedLines > 0) {
                             score += calculateScore(clearedLines)
@@ -231,10 +233,7 @@ fun TetrisGameScreen(
 
                             currentLevelSpeed = (currentLevelSpeed * 0.95f).toLong().coerceAtLeast(100L)
                         }
-                        currentPiece = null // Taşı sabitledikten sonra yeni bir taşı tetikler
-
-                        // Taş yerleştiğinde, bir sonraki taşın oluşması için null'a ayarlandı.
-                        // Yeni taşın oluşumu sırasında Game Over kontrolü yapılacak.
+                        currentPiece = null
                     } else {
                         currentPiece = movedPiece
                     }
@@ -242,48 +241,44 @@ fun TetrisGameScreen(
 
                 updateMissionsOnScore(score, currentMissions)
 
-                // Oyuncu durumu Firebase'e gönder (eğer multiplayer ise)
                 if (initialPlayerState != null) {
                     onPlayerStateChange?.invoke(
                         initialPlayerState.copy(
                             board = Board(convert2DTo1D(currentBoard)),
-                            currentBlock = currentPiece?.let { BlockState(it.shapeId, it.color, it.position.y, it.position.x) }, // BlockState'e y ve x gönderiliyor
+                            currentBlock = currentPiece?.let { BlockState(it.shapeId, it.color, it.position.y, it.position.x) },
                             score = score,
-                            isGameOver = isGameOver, // Eğer isGameOver true ise Firebase'e gönder
+                            isGameOver = isGameOver,
                             level = level.id,
-                            currentBlockSequenceIndex = playerBlockSequenceIndex // En son bloğun indeksini kaydet
+                            currentBlockSequenceIndex = playerBlockSequenceIndex
                         )
                     )
                 }
 
-                // Tek oyunculu modda görevler bitince oyun sonu ekranı görünsün (multiplayer hariç)
                 if (level.id != GameLevels.MULTIPLAYER_LEVEL.id && currentMissions.all { it.isCompleted }) {
-                    if (!isGameOver) { // Zaten Game Over değilse tetikle
+                    if (!isGameOver) {
                         isGameOver = true
                         onGameEnd(GameResult.Completed(score, level.id))
                     }
-                    break // Görevler tamamlandı, döngüyü sonlandır
-                }
-
-                // Eğer multiplayer seviyesindeysek ve ilk aşama görevleri tamamlandıysa ikinci aşama görevini ekle
-                if (level.id == GameLevels.MULTIPLAYER_LEVEL.id &&
-                    currentMissions.any { it.id == "mm1_stage1_lines" && it.isCompleted } &&
-                    currentMissions.any { it.id == "mm2_stage1_score" && it.isCompleted } &&
-                    currentMissions.none { it.id == "mm3_stage2_time" } // Henüz eklenmediyse
-                ) {
-                    currentMissions.add(Mission(id = "mm3_stage2_time", type = MissionType.SURVIVE_TIME, targetValue = 40, description = "40 saniye hayatta kal", isCompleted = false))
+                    break
                 }
             }
+        } else {
+            dynamicMissionJob?.cancel()
+            dynamicMissionJob = null
         }
     }
 
 
+    // Ana dış arka plan rengi ve damalı deseni için yeni tonlar (daha koyu)
+    val patternColorDark1 = Color(0xFF09111F) // Belirtilen ana renk
+    val patternColorDark2 = Color(0xFF060B15) // Ondan biraz daha koyu
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(level.theme.backgroundColor))
+            .background(patternColorDark1) // Damalı Canvas'ın altındaki varsayılan renk
             .onKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && !isGameOver && currentPiece != null) {
+                if (event.type == KeyEventType.KeyDown && !isGameOver && currentPiece != null && !isGamePaused) {
                     when (event.key) {
                         Key.DirectionLeft -> {
                             moveBlock(currentPiece!!, -1, 0).let { moved ->
@@ -325,7 +320,7 @@ fun TetrisGameScreen(
                                 totalClearedLines += clearedLines
                                 updateMissionsOnLineClear(clearedLines, currentMissions, totalClearedLines)
                             }
-                            currentPiece = null // Taşı sabitledikten sonra yeni bir taşı tetikler
+                            currentPiece = null
                             true
                         }
                         else -> false
@@ -335,7 +330,7 @@ fun TetrisGameScreen(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { offset ->
-                        if (!isGameOver && currentPiece != null) {
+                        if (!isGameOver && currentPiece != null && !isGamePaused) {
                             rotateBlock(currentPiece!!).let { rotated ->
                                 if (!checkCollision(currentBoard, rotated, 0, 0)) currentPiece = rotated
                             }
@@ -346,7 +341,7 @@ fun TetrisGameScreen(
             }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures { _, dragAmount ->
-                    if (!isGameOver && currentPiece != null) {
+                    if (!isGameOver && currentPiece != null && !isGamePaused) {
                         val deltaX = if (dragAmount > 20) 1 else if (dragAmount < -20) -1 else 0
                         if (deltaX != 0) {
                             moveBlock(currentPiece!!, deltaX, 0).let { moved ->
@@ -358,7 +353,7 @@ fun TetrisGameScreen(
             }
             .pointerInput(Unit) {
                 detectVerticalDragGestures { _, dragAmount ->
-                    if (!isGameOver && currentPiece != null) {
+                    if (!isGameOver && currentPiece != null && !isGamePaused) {
                         if (dragAmount > 20) {
                             moveBlock(currentPiece!!, 0, 1).let { moved ->
                                 if (!checkCollision(currentBoard, moved, 0, 0)) {
@@ -379,13 +374,32 @@ fun TetrisGameScreen(
                                 totalClearedLines += clearedLines
                                 updateMissionsOnLineClear(clearedLines, currentMissions, totalClearedLines)
                             }
-                            currentPiece = null // Taşı sabitledikten sonra yeni bir taşı tetikler
+                            currentPiece = null
                         }
                     }
                 }
             }
             .focusable()
     ) {
+        // Damalı (ızgaralı) arka plan çizimi
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val gridSize = 50.dp.toPx() // Izgara hücre boyutu
+
+            val horizontalCells = (size.width / gridSize).toInt() + 1
+            val verticalCells = (size.height / gridSize).toInt() + 1
+
+            for (i in 0 until horizontalCells) {
+                for (j in 0 until verticalCells) {
+                    val colorToDraw = if ((i + j) % 2 == 0) patternColorDark1 else patternColorDark2
+                    drawRect(
+                        color = colorToDraw,
+                        topLeft = Offset(i * gridSize, j * gridSize),
+                        size = Size(gridSize, gridSize)
+                    )
+                }
+            }
+        }
+
 
         Column(
             modifier = Modifier
@@ -410,14 +424,25 @@ fun TetrisGameScreen(
                             color = if (mission.isCompleted) Color.Green else Color.White
                         )
                     }
-                    // Eğer zaman görevi aktifse sayacı göster
-                    if (dynamicMissionTimeLeft > 0) {
-                        Text(
-                            text = "Kalan Süre: $dynamicMissionTimeLeft saniye",
-                            fontSize = 14.sp,
-                            color = if (dynamicMissionTimeLeft <= 10) Color.Red else Color.Yellow,
-                            fontWeight = FontWeight.Bold
-                        )
+                    if (level.id == GameLevels.MULTIPLAYER_LEVEL.id) {
+                        val surviveMission = currentMissions.find { it.type == MissionType.SURVIVE_TIME }
+                        if (surviveMission != null) {
+                            if (dynamicMissionTimeLeft > 0) {
+                                Text(
+                                    text = "Kalan Süre: $dynamicMissionTimeLeft saniye",
+                                    fontSize = 14.sp,
+                                    color = if (dynamicMissionTimeLeft <= 10) Color.Red else Color.Yellow,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else if (surviveMission.isCompleted) {
+                                Text(
+                                    text = "Süre Görevi Tamamlandı!",
+                                    fontSize = 14.sp,
+                                    color = Color.Green,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -425,25 +450,112 @@ fun TetrisGameScreen(
             Canvas(
                 modifier = Modifier
                     .size(BOARD_COLS * 30.dp, BOARD_ROWS * 30.dp)
+                    .background(
+                        brush = Brush.verticalGradient( // Oyun tahtası gradyanı: #09111F'den Koyu Mor'a
+                            colors = listOf(Color(0xFF09111F), Color(0xFF1E0C3A))
+                        )
+                    )
+                    .border( // Parlak mavi çerçeve
+                        width = 4.dp, // Çerçeve kalınlığı
+                        color = Color(0xFF42A5F5), // Parlak Mavi (Deep Sky Blue gibi)
+                        shape = RoundedCornerShape(4.dp) // Hafif yuvarlak köşeler
+                    )
             ) {
                 val cellWidth = size.width / BOARD_COLS.toFloat()
                 val cellHeight = size.height / BOARD_ROWS.toFloat()
+                val cornerRadius = CornerRadius(2f, 2f) // Hafif yuvarlatılmış köşeler için
+
+                // Yardımcı fonksiyon: Tek bir 3D görünümlü blok çizer
+                fun DrawScope.draw3DBlock(color: Color, x: Float, y: Float, width: Float, height: Float) {
+                    // Blok renginin RGB bileşenlerini kullanarak parlaklık ve gölge renklerini hesapla
+                    val baseRed = color.red
+                    val baseGreen = color.green
+                    val baseBlue = color.blue
+
+                    // Parlaklık rengi: RGB değerlerini artır
+                    val highlightColor = Color(
+                        red = (baseRed + 0.2f).coerceIn(0f, 1f),
+                        green = (baseGreen + 0.2f).coerceIn(0f, 1f),
+                        blue = (baseBlue + 0.2f).coerceIn(0f, 1f),
+                        alpha = color.alpha
+                    )
+
+                    // Gölge rengi: RGB değerlerini azalt
+                    val shadowColor = Color(
+                        red = (baseRed - 0.2f).coerceIn(0f, 1f),
+                        green = (baseGreen - 0.2f).coerceIn(0f, 1f),
+                        blue = (baseBlue - 0.2f).coerceIn(0f, 1f),
+                        alpha = color.alpha
+                    )
+
+                    val innerColor = color // Bloğun ana rengi
+
+                    // Ana blok gövdesi
+                    drawRoundRect(
+                        color = innerColor,
+                        topLeft = Offset(x, y),
+                        size = Size(width, height),
+                        cornerRadius = cornerRadius
+                    )
+
+                    // Üst ve sol kenara parlaklık (ışık geliyormuş gibi)
+                    drawRoundRect(
+                        color = highlightColor,
+                        topLeft = Offset(x, y),
+                        size = Size(width * 0.95f, height * 0.95f), // Hafif içe doğru
+                        cornerRadius = cornerRadius,
+                        style = Stroke(width = 2f) // İnce kenarlık
+                    )
+
+                    // Alt ve sağ kenara gölge
+                    drawRoundRect(
+                        color = shadowColor,
+                        topLeft = Offset(x + width * 0.05f, y + height * 0.05f), // Hafif dışa doğru
+                        size = Size(width * 0.95f, height * 0.95f),
+                        cornerRadius = cornerRadius,
+                        style = Stroke(width = 2f)
+                    )
+
+                    // Ortadaki parlaklık efekti
+                    clipRect(
+                        left = x + width * 0.1f,
+                        top = y + height * 0.1f,
+                        right = x + width * 0.9f,
+                        bottom = y + height * 0.9f
+                    ) {
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = 0.15f), // Hafif beyaz parlaklık
+                            topLeft = Offset(x + width * 0.05f, y + height * 0.05f),
+                            size = Size(width * 0.8f, height * 0.8f),
+                            cornerRadius = cornerRadius
+                        )
+                    }
+
+                    // Bloklar arası ayırıcı çizgiler
+                    drawRect(
+                        color = Color.Gray.copy(alpha = 0.2f),
+                        topLeft = Offset(x, y),
+                        size = Size(width, height),
+                        style = Stroke(1f)
+                    )
+                }
+
 
                 // Tahtayı çiz
                 currentBoard.forEachIndexed { y, row ->
                     row.forEachIndexed { x, cellValue ->
-                        val blockColor = if (cellValue != 0) Color(cellValue) else Color.Transparent
-                        drawRect(
-                            color = blockColor,
-                            topLeft = Offset(x * cellWidth, y * cellHeight),
-                            size = Size(cellWidth, cellHeight)
-                        )
-                        drawRect(
-                            color = Color.Gray.copy(alpha = 0.2f),
-                            topLeft = Offset(x * cellWidth, y * cellHeight),
-                            size = Size(cellWidth, cellHeight),
-                            style = Stroke(1f)
-                        )
+                        if (cellValue != 0) {
+                            val blockColor = Color(cellValue)
+                            draw3DBlock(blockColor, x * cellWidth, y * cellHeight, cellWidth, cellHeight)
+                        } else {
+                            // Boş hücrelerin sadece ızgarasını çiz
+                            drawRect(
+                                color = Color.Gray.copy(alpha = 0.1f), // Daha soft ızgara
+                                topLeft = Offset(x * cellWidth, y * cellHeight),
+                                size = Size(cellWidth, cellHeight),
+                                style = Stroke(1f)
+                            )
+                        }
                     }
                 }
 
@@ -454,28 +566,14 @@ fun TetrisGameScreen(
                         val px = piece.position.x + point.x
                         val py = piece.position.y + point.y
                         if (py in 0 until BOARD_ROWS && px in 0 until BOARD_COLS) {
-                            drawRect(
-                                color = blockColor,
-                                topLeft = Offset(px * cellWidth, py * cellHeight),
-                                size = Size(cellWidth, cellHeight)
-                            )
-                            drawRect(
-                                color = Color.Gray.copy(alpha = 0.2f),
-                                topLeft = Offset(px * cellWidth, py * cellHeight),
-                                size = Size(cellWidth, cellHeight),
-                                style = Stroke(1f)
-                            )
+                            draw3DBlock(blockColor, px * cellWidth, py * cellHeight, cellWidth, cellHeight)
                         }
                     }
                 }
             }
 
         }
-// ... Canvas
-// ... isGameOver kontrolü (tek oyunculu)
-
-// Pause Butonu (sağ üst köşede)
-        if (!isGameOver && !isGamePaused) { // Oyun bitmemiş ve duraklatılmamışsa butonu göster
+        if (!isGameOver && !isGamePaused) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -487,12 +585,15 @@ fun TetrisGameScreen(
                         .shadow(4.dp, RoundedCornerShape(8.dp))
                         .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
                 ) {
-                    Text("Duraklat")
+                    Icon( // Text yerine Icon kullanılıyor
+                        imageVector = Icons.Filled.Pause, // Pause ikonu
+                        contentDescription = "Duraklat",
+                        tint = Color.White // İkon rengi
+                    )
                 }
             }
         }
 
-// Pause Ekranı (oyun duraklatıldığında)
         if (isGamePaused) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -514,16 +615,13 @@ fun TetrisGameScreen(
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(onClick = {
-                    // Ana menüye dönmek için onGameEnd callback'ini kullanıyoruz
                     onGameEnd(GameResult.MainMenu)
-                    isGamePaused = false // Ekran değiştikten sonra pause durumunu sıfırla
+                    isGamePaused = false
                 }) {
                     Text("Ana Menüye Dön")
                 }
             }
         }
-        // *** TEK OYUNCULU GAME OVER EKRANI BURADA ***
-        // Bu blok, initialPlayerState null (yani tek oyunculu modda) ve isGameOver true olduğunda çalışır.
         if (isGameOver && initialPlayerState == null) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -554,8 +652,8 @@ fun TetrisGameScreen(
                 Spacer(modifier = Modifier.height(20.dp))
 
                 Button(onClick = {
-                    resetGame() // Oyunu sıfırla
-                    onGameEnd(GameResult.PlayAgain) // Tekrar oyna çağrısı
+                    resetGame()
+                    onGameEnd(GameResult.PlayAgain)
                 }) {
                     Text("Tekrar Oyna")
                 }
@@ -566,7 +664,7 @@ fun TetrisGameScreen(
                     val currentLevelIndex = GameLevels.ALL_LEVELS.indexOfFirst { it.id == level.id }
                     if (currentLevelIndex != -1 && currentLevelIndex + 1 < GameLevels.ALL_LEVELS.size) {
                         Button(onClick = {
-                            onGameEnd(GameResult.NextLevel(level.id)) // Sonraki seviyeye geç çağrısı
+                            onGameEnd(GameResult.NextLevel(level.id))
                         }) {
                             Text("Bir Sonraki Seviyeye Geç")
                         }
@@ -582,7 +680,7 @@ fun TetrisGameScreen(
                 }
 
                 Button(onClick = {
-                    onGameEnd(GameResult.MainMenu) // Ana menüye dön çağrısı
+                    onGameEnd(GameResult.MainMenu)
                 }) {
                     Text("Ana Menüye Dön")
                 }

@@ -26,39 +26,38 @@ fun getBlockShapeById(shapeId: String): List<Point> {
     }
 }
 
-// Her blok tipine özgü rengi döndüren yeni fonksiyon
+// Her blok tipine özgü rengi döndüren fonksiyon
 fun getBlockColorByShapeId(shapeId: String): Int {
     return when (shapeId) {
-        "I" -> Color(0xFF00FFFF).toArgb() // Cyan
-        "O" -> Color(0xFFFFFF00).toArgb() // Yellow
-        "T" -> Color(0xFF800080).toArgb() // Purple
-        "S" -> Color(0xFF00FF00).toArgb() // Green
-        "Z" -> Color(0xFFFF0000).toArgb() // Red
-        "J" -> Color(0xFF0000FF).toArgb() // Blue
-        "L" -> Color(0xFFFFA500).toArgb() // Orange
+        "I" -> Color(0xFF00E5FF).toArgb() // Parlak Mavi (Cyan)
+        "O" -> Color(0xFFFFF000).toArgb() // Parlak Sarı
+        "T" -> Color(0xFFB300FF).toArgb() // Parlak Mor
+        "S" -> Color(0xFF00FF40).toArgb() // Parlak Yeşil
+        "Z" -> Color(0xFFFF0000).toArgb() // Parlak Kırmızı
+        "J" -> Color(0xFF0040FF).toArgb() // Parlak Mavi
+        "L" -> Color(0xFFFF8000).toArgb() // Parlak Turuncu
         else -> Color.Gray.toArgb() // Bilinmeyen durumlar için varsayılan gri
     }
 }
 
-// YENİ EKLENDİ: Rastgele bir blok sırası oluşturan fonksiyon (multiplayer başlangıcı için)
+
 fun generateRandomBlockSequence(length: Int): List<String> {
     val shapes = listOf("I", "O", "T", "S", "Z", "J", "L")
     return List(length) { shapes.random() }
 }
 
-// GÜNCELLENDİ: Yeni bir düşen parça oluşturur.
-// Artık oyuncunun kendi sırasını takip etmesi için blockSequence ve o anki indeksi alır.
+
 fun generateNextFallingPiece(
-    blockSequence: List<String>? = null, // Tek oyunculu modda null olabilir
-    playerBlockSequenceIndex: Int = 0 // Oyuncunun kendi sırasındaki mevcut indeksi
+    blockSequence: List<String>? = null,
+    playerBlockSequenceIndex: Int = 0
 ): FallingPiece {
-    val shapes = listOf("I", "O", "T", "S", "Z", "J", "L") // Fallback için
+    val shapes = listOf("I", "O", "T", "S", "Z", "J", "L")
 
     val shapeIdToUse: String
     if (blockSequence != null && blockSequence.isNotEmpty() && playerBlockSequenceIndex < blockSequence.size) {
-        shapeIdToUse = blockSequence[playerBlockSequenceIndex] // Ortak sıradan oyuncunun kendi indeksiyle al
+        shapeIdToUse = blockSequence[playerBlockSequenceIndex]
     } else {
-        // Eğer blockSequence null (tek oyunculu mod) veya biterse (çok uzun bir oyun), rastgele blok üretmeye devam et.
+
         shapeIdToUse = shapes.random()
         if (blockSequence != null && playerBlockSequenceIndex >= blockSequence.size) {
             println("Uyarı: Ortak blok sırası tükendi, rastgele blok üretiliyor.")
@@ -167,7 +166,7 @@ fun calculateScore(clearedLines: Int): Int {
     }
 }
 
-// Tahtayı 2D'den 1D'ye dönüştürür (Firebase için)
+// Tahtayı 2D'den 1D'ye dönüştürür
 fun convert2DTo1D(board: List<List<Int>>): List<Int> {
     return board.flatten()
 }
@@ -198,7 +197,7 @@ fun initializeBoardWithObstacles(board: MutableList<MutableList<Int>>, numObstac
     return obstacleBoard
 }
 
-// Görevleri güncelleme fonksiyonları (Bu fonksiyonlar aynı kalabilir)
+// Görevleri güncelleme fonksiyonları
 fun updateMissionsOnLineClear(clearedLines: Int, currentMissions: MutableList<Mission>, totalClearedLines: Int) {
     currentMissions.forEach { mission ->
         if (!mission.isCompleted) {
@@ -208,7 +207,7 @@ fun updateMissionsOnLineClear(clearedLines: Int, currentMissions: MutableList<Mi
                         mission.isCompleted = true
                     }
                 }
-                else -> { /* Diğer görev tipleri burada işlenmez */ }
+                else -> { }
             }
         }
     }
@@ -223,7 +222,7 @@ fun updateMissionsOnScore(currentScore: Int, currentMissions: MutableList<Missio
                         mission.isCompleted = true
                     }
                 }
-                else -> { /* Diğer görev tipleri burada işlenmez */ }
+                else -> { }
             }
         }
     }

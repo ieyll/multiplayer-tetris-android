@@ -4,10 +4,15 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -33,6 +38,11 @@ import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+
 
 // GameLevels objesini import etmeyi unutma
 import com.example.tetrisprojem.data.GameLevels
@@ -40,8 +50,9 @@ import com.example.tetrisprojem.data.GameLevels
 import com.example.tetrisprojem.data.GameResult
 
 
-// Uygulama ekranlarını temsil eden sealed class
+
 sealed class Screen {
+    object Splash : Screen()
     object Login : Screen()
     object Lobby : Screen()
     data class GameRoom(val roomId: String, val isPlayer1: Boolean) : Screen()
@@ -71,7 +82,7 @@ class MainActivity : ComponentActivity() {
 fun MainScreenContent() {
     val auth = FirebaseAuth.getInstance()
     var currentUserState by remember { mutableStateOf<FirebaseUser?>(null) }
-    var currentScreen by remember { mutableStateOf<Screen>(Screen.Login) }
+    var currentScreen by remember { mutableStateOf<Screen>(Screen.Splash) }
     var currentRoomId by remember { mutableStateOf<String?>(null) }
     var isPlayer1InRoom by remember { mutableStateOf<Boolean?>(null) }
 
@@ -79,13 +90,26 @@ fun MainScreenContent() {
 
     val coroutineScope = rememberCoroutineScope()
 
+    // Splash ekranından sonraki geçişi yönet
+    LaunchedEffect(Unit) {
+        delay(3000L) // 3 saniye bekle
+        // 10 saniye sonunda, eğer hala Splash ekranındaysak, Login veya Lobby ekranına geçiş yap
+        if (currentScreen == Screen.Splash) {
+            val user = auth.currentUser
+            currentScreen = if (user != null) Screen.Lobby else Screen.Login
+        }
+    }
+
     DisposableEffect(Unit) {
         val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
             currentUserState = firebaseAuth.currentUser
-            if (currentUserState != null && currentScreen == Screen.Login) {
-                currentScreen = Screen.Lobby
-            } else if (currentUserState == null && currentScreen != Screen.Login) {
-                currentScreen = Screen.Login
+            // Eğer authentication durumu değişirse ve Splash ekranında değilsek, geçişi yönet
+            if (currentScreen != Screen.Splash) {
+                if (currentUserState != null) {
+                    currentScreen = Screen.Lobby
+                } else {
+                    currentScreen = Screen.Login
+                }
             }
         }
         auth.addAuthStateListener(authStateListener)
@@ -98,9 +122,14 @@ fun MainScreenContent() {
     val gameRepository = remember { GameRepository(firestore) }
 
     when (currentScreen) {
+        Screen.Splash -> {
+            SplashScreen()
+        }
         Screen.Login -> {
             LoginScreen { userId ->
-                // Bu callback kullanılmıyor çünkü authStateListener zaten geçişi yönetecek.
+                // Bu callback, LoginScreen içinde kullanıcı giriş yaptığında veya kaydolduğunda tetiklenir.
+                // authStateListener zaten ekran geçişini yönettiği için burada doğrudan bir ekran geçişi yapmayız.
+                // Ancak, kullanıcı ID'si gibi bilgileri burada işleyebiliriz.
             }
         }
         Screen.Lobby -> {
@@ -125,6 +154,7 @@ fun MainScreenContent() {
                     }
                 )
             } ?: run {
+                // Eğer currentUserState null ise Lobby'de kalamayız, Login ekranına dön
                 currentScreen = Screen.Login
             }
         }
@@ -163,7 +193,7 @@ fun MainScreenContent() {
                                 currentSinglePlayerLevel = nextLevel
                                 currentScreen = Screen.SinglePlayer(nextLevel)
                             } else {
-                                currentScreen = Screen.Lobby
+                                currentScreen = Screen.Lobby // Tüm seviyeler bittiyse lobiye dön
                             }
                         }
                         is GameResult.MainMenu -> {
@@ -181,6 +211,41 @@ fun MainScreenContent() {
         }
     }
 }
+
+@Composable
+fun SplashScreen() {
+    var dotCount by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(500)
+            dotCount = (dotCount + 1) % 4
+        }
+    }
+
+    val loadingText = "Yükleniyor" + ".".repeat(dotCount)
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF09111F)),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.tetris_logo),
+            contentDescription = "Tetris Logo",
+            modifier = Modifier.size(250.dp)
+        )
+        Spacer(modifier = Modifier.height(32.dp))
+        Text(
+            text = loadingText,
+            color = Color.White,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
 
 @Preview(showBackground = true)
 @Composable

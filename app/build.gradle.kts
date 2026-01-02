@@ -66,6 +66,9 @@ dependencies {
     // Eğer LiveData ile Compose'u birleştireceksen:
     implementation("androidx.compose.runtime:runtime-livedata")
 
+    // İkonlar için gerekli bağımlılık
+    implementation("androidx.compose.material:material-icons-extended")
+
 
     // --- KOTLIN COROUTINES BAĞIMLILIKLARI ---
     // Coroutine'lerin temel işlevselliği
