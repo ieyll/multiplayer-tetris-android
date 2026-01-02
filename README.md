@@ -31,7 +31,7 @@ Firebase services were used for **testing and prototyping purposes** and are cur
 
 | Tetris | Sign in | Game Lobby | Game Room |  Game Screen |
 | :---: | :---: | :---: | :---: | :---: |
-| ![Tetris](tetris.png) | ![Sign in](sign_in.png) | ![Lobby](lobby.png) | ![GameScreen](gamescreen.png) | ![GameRoom](gameroom.png) |
+| ![Tetris](tetris.png) | ![Sign in](sign_in.png) | ![Lobby](lobby.png) | ![GameRoom](gameroom.png) | ![GameScreen](game.png) |
 
 ## ▶️ How to Run
 1. Clone the repository
